@@ -1,65 +1,70 @@
-import express from 'express';
+const express = require('express');
 const app = express();
-import { PrismaClient } from './generated/prisma/index.js';
-const prisma = new PrismaClient();
-const port = 3000;
-app.use(express.json());
-app.post('/user', async (req, res) => {
-  try {
-    const { name, email } = req.body;
-    const user = await prisma.user.create({
-      data: {
-        name,
-        email,
-      },
-    });
-    res.status(201).json(user);
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'An error occurred while creating the user.' });
-  }
-});
-app.get('/users', async (req, res) => {
-  try {
-    const users = await prisma.user.findMany({
-      include: { posts: true }
-    });
-    res.status(200).json(users);
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'An error occurred while fetching the users.' });
-  }
-});
-app.post('/post', async (req, res) => {
-  try {
-    const { title, content, authorId } = req.body;
-    const post = await prisma.post.create({
-      data: {
-        title,
-        content,
-        author: {
-          connect: { id: authorId },
-        },
-      },
-    });
-    res.status(201).json(post);
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'An error occurred while creating the post.' });
-  }
-});
-app.get('/posts', async (req, res) => {
-  try {
-    const posts = await prisma.post.findMany({
-      include: { author: true }
-    });
+const mongoose = require('mongoose');
+const mongoURI = process.env.MONGO_URL || "mongodb://localhost:27017/mydb";
+const Task = require('./schema');
+const authRoutes = require('./controller/auth')
+mongoose.connect(mongoURI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+})
+  .then(() => console.log('MongoDB connected'))
+  .catch(err => console.error('MongoDB connection error:', err));
 
-    res.status(200).json(posts);
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.post('/tasks', async (req, res) => {
+  try {
+    const task = new Task(req.body);
+    await task.save();
+    res.status(201).json(task);
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'An error occurred while fetching the posts.' });
+    res.status(400).json({ error: error.message });
   }
 });
-app.listen(port, () => {
-  console.log(`Server is running on http://localhost:${port}`);
+app.use('/',authRoutes)
+app.get('/tasks', async (req, res) => {
+  try {
+    const tasks = await Task.find();
+    res.status(200).json(tasks);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+app.get('/tasks/:id', async (req, res) => {
+  try {
+    const task = await Task.findById(req.params.id);
+    if (!task) {
+      return res.status(404).json({ error: 'Task not found' });
+    }
+    res.status(200).json(task);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+app.put('/tasks/:id', async (req, res) => {
+  try {
+    const task = await Task.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
+    if (!task) {
+      return res.status(404).json({ error: 'Task not found' });
+    }
+    res.status(200).json(task);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+app.delete('/tasks/:id', async (req, res) => {  
+  try {
+    const task = await Task.findByIdAndDelete(req.params.id);
+    if (!task) {
+      return res.status(404).json({ error: 'Task not found' });
+    }
+    res.status(204).send();
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+}
+);
+app.listen(3000, () => {
+  console.log('Server is running on port 3000');
 });
