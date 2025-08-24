@@ -1,70 +1,59 @@
-const express = require('express');
-const app = express();
-const mongoose = require('mongoose');
-const mongoURI = process.env.MONGO_URL || "mongodb://localhost:27017/mydb";
-const Task = require('./schema');
-const authRoutes = require('./controller/auth')
-mongoose.connect(mongoURI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-})
-  .then(() => console.log('MongoDB connected'))
-  .catch(err => console.error('MongoDB connection error:', err));
+const express = require("express");
+const { Kafka } = require("kafkajs");
 
+const app = express();
 app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-app.post('/tasks', async (req, res) => {
-  try {
-    const task = new Task(req.body);
-    await task.save();
-    res.status(201).json(task);
-  } catch (error) {
-    res.status(400).json({ error: error.message });
-  }
+
+const kafka = new Kafka({
+  clientId: "order-app",
+  brokers: [process.env.KAFKA_BROKER || "localhost:9092"],
 });
-app.use('/',authRoutes)
-app.get('/tasks', async (req, res) => {
-  try {
-    const tasks = await Task.find();
-    res.status(200).json(tasks);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-app.get('/tasks/:id', async (req, res) => {
-  try {
-    const task = await Task.findById(req.params.id);
-    if (!task) {
-      return res.status(404).json({ error: 'Task not found' });
-    }
-    res.status(200).json(task);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-app.put('/tasks/:id', async (req, res) => {
-  try {
-    const task = await Task.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
-    if (!task) {
-      return res.status(404).json({ error: 'Task not found' });
-    }
-    res.status(200).json(task);
-  } catch (error) {
-    res.status(400).json({ error: error.message });
-  }
-});
-app.delete('/tasks/:id', async (req, res) => {  
-  try {
-    const task = await Task.findByIdAndDelete(req.params.id);
-    if (!task) {
-      return res.status(404).json({ error: 'Task not found' });
-    }
-    res.status(204).send();
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
+
+const producer = kafka.producer();
+const paymentConsumer = kafka.consumer({ groupId: "payment-service" });
+const shippingConsumer = kafka.consumer({ groupId: "shipping-service" });
+
+async function initKafka() {
+  await producer.connect();
+
+  await paymentConsumer.connect();
+  await shippingConsumer.connect();
+
+  await paymentConsumer.subscribe({ topic: "orders", fromBeginning: true });
+  await shippingConsumer.subscribe({ topic: "orders", fromBeginning: true });
+
+  // Payment Service
+  paymentConsumer.run({
+    eachMessage: async ({ message }) => {
+      console.log(`💳 Payment Service: Processing -> ${message.value.toString()}`);
+    },
+  });
+
+  // Shipping Service
+  shippingConsumer.run({
+    eachMessage: async ({ message }) => {
+      console.log(`📦 Shipping Service: Shipping -> ${message.value.toString()}`);
+    },
+  });
 }
-);
+
+// REST endpoint to place an order
+app.post("/order", async (req, res) => {
+  const order = {
+    orderId: Date.now(),
+    items: req.body.items || ["Book", "Laptop"],
+  };
+
+  await producer.send({
+    topic: "orders",
+    messages: [{ value: JSON.stringify(order) }],
+  });
+
+  console.log(`🛒 Order Placed: ${JSON.stringify(order)}`);
+  res.json({ message: "Order placed successfully", order });
+});
+
 app.listen(3000, () => {
-  console.log('Server is running on port 3000');
+  console.log("🚀 Express server running on http://localhost:3000");
+  initKafka().catch(console.error);
 });
