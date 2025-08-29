@@ -65,6 +65,33 @@ app.delete('/users/:id', (req, res) => {
         }
     });
 });
+const pollRef = db.ref('polls');
+app.get("/poll", async (req, res) => {
+  try {
+    const snapshot = await pollRef.once("value");
+    res.json(snapshot.val());
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/vote", async (req, res) => {
+  try {
+    const { option } = req.body;
+    if (!option) return res.status(400).json({ error: "Option is required" });
+    const optionRef = pollRef.child(option);
+    await optionRef.transaction((currentVotes) => {
+      return (currentVotes || 0) + 1;
+    });
+
+    res.json({ message: "Vote recorded successfully!" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+pollRef.on("value", (snapshot) => {
+  console.log("Updated Poll Results:", snapshot.val());
+});
 app.listen(PORT, () => {
     console.log(`Server is running on http://localhost:${PORT}`);
 });
