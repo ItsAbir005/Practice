@@ -7,8 +7,8 @@ const typeDefs = gql`
         category: String!
     }
     type Query {
-        products(category: String): [Product!]!
-        product(id: ID!): Product
+        products(category: String): [product!]!
+        product(id: ID!): product
     }
 `;
 module.exports = typeDefs;
