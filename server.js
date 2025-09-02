@@ -4,6 +4,11 @@ const { gql } = require("apollo-server-express");
 const bodyParser = require("body-parser");
 const typeDefs = require("./schema");
 const resolvers = require("./resolvers");
+const mongoose = require("mongoose");
+const uri = "mongodb+srv://maityabir040:s03qu2Z4oA8IMgLs@cluster0.o9ynclx.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0";
+mongoose.connect(uri, { useNewUrlParser: true, useUnifiedTopology: true })
+  .then(() => console.log("MongoDB connected"))
+  .catch(err => console.log(err));
 async function startServer() {
   const app = express();
   
